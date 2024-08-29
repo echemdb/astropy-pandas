@@ -46,7 +46,6 @@ from packaging.version import parse as version_parse
 
 import numpy as np
 import pandas as pd
-import pint
 from pandas import DataFrame, Series, Index
 from pandas.api.extensions import (
     ExtensionArray,
@@ -60,9 +59,10 @@ from pandas.api.indexers import check_array_indexer
 from pandas.api.types import is_integer, is_list_like, is_object_dtype, is_string_dtype
 from pandas.compat import set_function_name
 from pandas.core import nanops  # type: ignore
-from pint import Quantity as _Quantity
-from pint import Unit as _Unit
-from pint import compat, errors
+from astropy.units.quantity import Quantity as _Quantity
+from astropy.units.core import UnitBase as _Unit
+
+# from pint import compat, errors
 
 # Magic 'unit' flagging columns with no unit support, used in
 # quantify/dequantify
@@ -88,7 +88,7 @@ class PintType(ExtensionDtype):
     _metadata = ("units",)
     _match = re.compile(r"(P|p)int\[(?P<units>.+)\]")
     _cache = {}  # type: ignore
-    ureg = pint.get_application_registry()
+    # ureg = pint.get_application_registry()
 
     @property
     def _is_numeric(self):
@@ -115,16 +115,16 @@ class PintType(ExtensionDtype):
             # eg 1 mm. Initialising a quantity and taking its unit
             # TODO: Seperate units from quantities in pint
             # to simplify this bit
-            units = cls.ureg.Quantity(1, units).units
+            units = _Quantity(1, units).unit
 
         try:
             # TODO: fix when Pint implements Callable typing
             # TODO: wrap string into PintFormatStr class
-            return cls._cache["{:P}".format(units)]  # type: ignore
+            return cls._cache[units]
         except KeyError:
             u = object.__new__(cls)
             u.units = units
-            cls._cache["{:P}".format(units)] = u  # type: ignore
+            cls._cache[units] = u  # type: ignore
             return u
 
     @classmethod
@@ -175,7 +175,7 @@ class PintType(ExtensionDtype):
                 f"'construct_from_quantity_string' expects a string, got {type(string)}"
             )
 
-        quantity = cls.ureg.Quantity(string)
+        quantity = _Quantity(string)
         return cls(units=quantity.units)
 
     # def __unicode__(self):
@@ -187,7 +187,7 @@ class PintType(ExtensionDtype):
 
     @property
     def na_value(self):
-        return self.ureg.Quantity(np.nan, self.units)
+        return _Quantity(np.nan, self.units)
 
     def __hash__(self):
         # make myself hashable
@@ -339,7 +339,7 @@ class PintArray(ExtensionArray, ExtensionScalarOpsMixin):
         self._dtype = dtype
 
         if isinstance(values, _Quantity):
-            values = values.to(dtype.units).magnitude
+            values = values.to(dtype.units).value
         elif isinstance(values, PintArray):
             values = values._data
         if isinstance(values, np.ndarray):
@@ -353,7 +353,7 @@ class PintArray(ExtensionArray, ExtensionScalarOpsMixin):
         if copy:
             values = values.copy()
         self._data = values
-        self._Q = self.dtype.ureg.Quantity
+        self._Q = _Quantity
 
     def __getstate__(self):
         # we need to discard the cached _Q, which is not pickleable
@@ -363,7 +363,7 @@ class PintArray(ExtensionArray, ExtensionScalarOpsMixin):
 
     def __setstate__(self, dct):
         self.__dict__.update(dct)
-        self._Q = self.dtype.ureg.Quantity
+        self._Q = _Quantity
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         out = kwargs.get("out", ())
@@ -456,10 +456,10 @@ class PintArray(ExtensionArray, ExtensionScalarOpsMixin):
             return
 
         if isinstance(value, _Quantity):
-            value = value.to(self.units).magnitude
+            value = value.to(self.units).value
         elif is_list_like(value) and len(value) > 0:
             if isinstance(value[0], _Quantity):
-                value = [item.to(self.units).magnitude for item in value]
+                value = [item.to(self.units).value for item in value]
             if len(value) == 1:
                 value = value[0]
 
@@ -497,23 +497,8 @@ class PintArray(ExtensionArray, ExtensionScalarOpsMixin):
             when ``boxed=False`` and :func:`str` is used when
             ``boxed=True``.
         """
-        # TODO: remove this once 0.24 is min pint version
-        if version_parse(pint.__version__).base_version < "0.24":
-            float_format = pint.formatting.remove_custom_flags(
-                self.dtype.ureg.default_format
-            )
-        else:
-            float_format = pint.formatting.remove_custom_flags(
-                self.dtype.ureg.formatter.default_format
-            )
-
         def formatting_function(quantity):
-            if isinstance(quantity.magnitude, float):
-                return "{:{float_format}}".format(
-                    quantity.magnitude, float_format=float_format
-                )
-            else:
-                return str(quantity.magnitude)
+            return str(quantity.value)
 
         return formatting_function
 
@@ -552,7 +537,7 @@ class PintArray(ExtensionArray, ExtensionScalarOpsMixin):
             if dtype == self._dtype and not copy:
                 return self
             else:
-                return PintArray(self.quantity.to(dtype.units).magnitude, dtype)
+                return PintArray(self.quantity.to(dtype.units).value, dtype)
         # do *not* delegate to __array__ -> is required to return a numpy array,
         # but somebody may be requesting another pandas array
         # examples are e.g. PyArrow arrays as requested by "string[pyarrow]"
@@ -625,7 +610,7 @@ class PintArray(ExtensionArray, ExtensionScalarOpsMixin):
         if allow_fill and fill_value is None:
             fill_value = self.dtype.na_value
         if isinstance(fill_value, _Quantity):
-            fill_value = fill_value.to(self.units).magnitude
+            fill_value = fill_value.to(self.units).value
             if not is_scalar(fill_value) and not fill_value.ndim:
                 # deal with Issue #165; for unit registries with force_ndarray_like = True,
                 # magnitude is in fact an array scalar, which will get rejected by pandas.
@@ -653,7 +638,7 @@ class PintArray(ExtensionArray, ExtensionScalarOpsMixin):
 
         data = []
         for a in to_concat:
-            converted_values = a.quantity.to(output_units).magnitude
+            converted_values = a.quantity.to(output_units).value
             data.append(np.atleast_1d(converted_values))
 
         return cls(np.concatenate(data), output_units)
@@ -683,7 +668,7 @@ class PintArray(ExtensionArray, ExtensionScalarOpsMixin):
 
         if isinstance(master_scalar, _Quantity):
             scalars = [
-                (item.to(dtype.units).magnitude if hasattr(item, "to") else item)
+                (item.to(dtype.units).value if hasattr(item, "to") else item)
                 for item in scalars
             ]
         return cls(scalars, dtype=dtype, copy=copy)
@@ -765,7 +750,7 @@ class PintArray(ExtensionArray, ExtensionScalarOpsMixin):
     def __contains__(self, item) -> Union[bool, np.bool_]:
         if not isinstance(item, _Quantity):
             return False
-        elif pd.isna(item.magnitude):
+        elif pd.isna(item.value):
             return cast(np.ndarray, self.isna()).any()
         else:
             return super().__contains__(item)
@@ -898,9 +883,9 @@ class PintArray(ExtensionArray, ExtensionScalarOpsMixin):
 
     @classmethod
     def from_1darray_quantity(cls, quantity):
-        if not is_list_like(quantity.magnitude):
+        if not is_list_like(quantity.value):
             raise TypeError("quantity's magnitude is not list like")
-        return cls(quantity.magnitude, quantity.units)
+        return cls(quantity.value, quantity.unit)
 
     def __array__(self, dtype=None, copy=False):
         if dtype is None or is_object_dtype(dtype):
@@ -966,9 +951,9 @@ class PintArray(ExtensionArray, ExtensionScalarOpsMixin):
         # 3. Missing values.
         arr = self._data
         if isinstance(value, _Quantity):
-            value = value.to(self.units).magnitude
+            value = value.to(self.units).value
         elif is_list_like(value) and len(value) > 0 and isinstance(value[0], _Quantity):
-            value = [item.to(self.units).magnitude for item in value]
+            value = [item.to(self.units).value for item in value]
         return arr.searchsorted(value, side=side, sorter=sorter)
 
     def map(self, mapper, na_action=None):
@@ -1326,12 +1311,12 @@ def is_pint_type(obj):
         return False
 
 
-try:
-    # for pint < 0.21 we need to explicitly register
-    # TODO: fix when Pint is properly typed for mypy
-    compat.upcast_types.append(PintArray)  # type: ignore
-except AttributeError:
-    # for pint = 0.21 we need to add the full names of PintArray and DataFrame,
-    # which is to be added in pint > 0.21
-    compat.upcast_type_map.setdefault("pint_pandas.pint_array.PintArray", PintArray)  # type: ignore
-    compat.upcast_type_map.setdefault("pandas.core.frame.DataFrame", DataFrame)  # type: ignore
+# try:
+#     # for pint < 0.21 we need to explicitly register
+#     # TODO: fix when Pint is properly typed for mypy
+#     compat.upcast_types.append(PintArray)  # type: ignore
+# except AttributeError:
+#     # for pint = 0.21 we need to add the full names of PintArray and DataFrame,
+#     # which is to be added in pint > 0.21
+#     compat.upcast_type_map.setdefault("pint_pandas.pint_array.PintArray", PintArray)  # type: ignore
+#     compat.upcast_type_map.setdefault("pandas.core.frame.DataFrame", DataFrame)  # type: ignore
