@@ -2,6 +2,19 @@
 
 Heavily inspired by pint-pandas, we are trying to bring astropy units into pandas data frames. As of this writing this is just a proof-of-concept, a lot of work is needed to make this work properly.
 
+Minimal example:
+
+```py
+>>> import astropy_pandas
+>>> import pandas as pd
+>>> df = pd.DataFrame({
+...      'x': pd.Series([13.], dtype="astropy[parsec]"),
+...      'y': pd.Series([37.], dtype="astropy[angstrom]")})
+>>> (df['x'] * df['y']).astropy.to('km2')
+0    1484.210916697348
+dtype: astropy[km2]
+```
+
 ## Roadmap to 1.0
 
 * [ ] Announce at https://stackoverflow.com/questions/39419178/how-can-i-manage-units-in-pandas-data
