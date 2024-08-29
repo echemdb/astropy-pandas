@@ -86,7 +86,7 @@ class PintType(ExtensionDtype):
     # num = 102
     units: Optional[_Unit] = None  # Filled in by `construct_from_..._string`
     _metadata = ("units",)
-    _match = re.compile(r"(P|p)int\[(?P<units>.+)\]")
+    _match = re.compile(r"(A|a)stropy\[(?P<units>.+)\]")
     _cache = {}  # type: ignore
     # ureg = pint.get_application_registry()
 
@@ -130,9 +130,9 @@ class PintType(ExtensionDtype):
     @classmethod
     def _parse_dtype_strict(cls, units):
         if isinstance(units, str):
-            if units.lower() == "pint[]":
-                units = "pint[dimensionless]"
-            if units.lower().startswith("pint["):
+            if units.lower() == "astropy[]":
+                units = "astropy[dimensionless]"
+            if units.lower().startswith("astropy["):
                 if not units[-1] == "]":
                     raise ValueError("could not construct PintType")
                 m = cls._match.search(units)
@@ -154,7 +154,7 @@ class PintType(ExtensionDtype):
                 f"'construct_from_string' expects a string, got {type(string)}"
             )
         if isinstance(string, str) and (
-            string.startswith("pint[") or string.startswith("Pint[")
+            string.startswith("astropy[") or string.startswith("Astropy[")
         ):
             # do not parse string like U as pint[U]
             # avoid tuple to be regarded as unit
@@ -183,7 +183,7 @@ class PintType(ExtensionDtype):
 
     @property
     def name(self):
-        return str("pint[{units}]".format(units=self.units))
+        return str("astropy[{units}]".format(units=self.units))
 
     @property
     def na_value(self):
@@ -196,7 +196,7 @@ class PintType(ExtensionDtype):
     def __eq__(self, other):
         try:
             other = PintType(other)
-        except (ValueError, errors.UndefinedUnitError):
+        except ValueError:
             return False
         return self.units == other.units
 
@@ -207,7 +207,7 @@ class PintType(ExtensionDtype):
         can match (via string or type)
         """
         if isinstance(dtype, str):
-            if dtype.startswith("pint[") or dtype.startswith("Pint["):
+            if dtype.startswith("astropy[") or dtype.startswith("Astropy["):
                 try:
                     if cls._parse_dtype_strict(dtype) is not None:
                         return True
@@ -530,7 +530,7 @@ class PintArray(ExtensionArray, ExtensionScalarOpsMixin):
             NumPy ndarray with 'dtype' for its dtype.
         """
         if isinstance(dtype, str) and (
-            dtype.startswith("Pint[") or dtype.startswith("pint[")
+            dtype.startswith("Astropy[") or dtype.startswith("astropy[")
         ):
             dtype = PintType(dtype)
         if isinstance(dtype, PintType):
@@ -1046,7 +1046,7 @@ class PintArray(ExtensionArray, ExtensionScalarOpsMixin):
             return result
         if name == "var":
             if keepdims:
-                return PintArray(result, f"pint[({self.units})**2]")
+                return PintArray(result, f"astropy[({self.units})**2]")
             return self._Q(result, self.units**2)
         if keepdims:
             return PintArray(result, self.dtype)
@@ -1078,7 +1078,7 @@ PintArray._add_comparison_ops()
 register_extension_dtype(PintType)
 
 
-@register_dataframe_accessor("pint")
+@register_dataframe_accessor("astropy")
 class PintDataFrameAccessor(object):
     def __init__(self, pandas_obj):
         self._obj = pandas_obj
@@ -1179,7 +1179,7 @@ class PintDataFrameAccessor(object):
         return df_new
 
 
-@register_series_accessor("pint")
+@register_series_accessor("astropy")
 class PintSeriesAccessor(object):
     def __init__(self, pandas_obj):
         if self._is_object_dtype_and_quantity(pandas_obj):
@@ -1195,7 +1195,7 @@ class PintSeriesAccessor(object):
     def _validate(obj):
         if not is_pint_type(obj):
             raise AttributeError(
-                "Cannot use 'pint' accessor on objects of "
+                "Cannot use 'astropy' accessor on objects of "
                 "dtype '{}'.".format(obj.dtype)
             )
 
