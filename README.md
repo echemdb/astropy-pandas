@@ -1,3 +1,8 @@
+<p align="center">
+  <img alt="logo" src="https://github.com/echemdb/astropy-pandas/raw/main/logo.png" width="300px">
+</p>
+
+
 # astropy-pandas
 
 Heavily inspired by pint-pandas, we are trying to bring astropy units into pandas data frames. As of this writing this is just a proof-of-concept, a lot of work is needed to make this work properly.
